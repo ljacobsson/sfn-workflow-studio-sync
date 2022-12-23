@@ -13,7 +13,7 @@ Third party Chrome extension that enables real time sync between StepFunctions W
 * Select the folder <project_root>/build
 
 ## Usage
-This extension uses the [File System Access API](https://developer.mozilla.org/en-US/docs/Web/API/File_System_Access_API) to give Chrome temporary access to a single file on your filesystem.
+This extension uses the [File System Access API](https://developer.mozilla.org/en-US/docs/Web/API/File_System_Access_API) to give Chrome temporary access to a single file on your filesystem. Please check your [browser compatability](https://developer.mozilla.org/en-US/docs/Web/API/File_System_Access_API#browser_compatibility)
 
 1. Open [Workflow Studio](https://eu-west-1.console.aws.amazon.com/states/home?region=eu-west-1#/visual-editor?flowType=create)
 2. Click the `Enable local sync` button at the top right corner
