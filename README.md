@@ -2,6 +2,8 @@
 
 Third party Chrome extension that enables real time sync between StepFunctions Workflow Studio and your local file system
 
+![Demo](images/demo.gif)
+
 ## Install
 * Clone this repo
 * run `npm run build`
@@ -23,5 +25,3 @@ Note that if you are modifying an existing state machine and use DefinitionSubst
 --- 
 
 This project was bootstrapped with [Chrome Extension CLI](https://github.com/dutiyesh/chrome-extension-cli)
-
-# sfn-workflow-studio-sync
