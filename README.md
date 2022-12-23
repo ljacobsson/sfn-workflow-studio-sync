@@ -6,7 +6,7 @@ Third party Chrome extension that enables real time sync between StepFunctions W
 
 ## Install
 * Clone this repo
-* run `npm run build`
+* run `npm install && npm run build`
 * Open chrome://extensions
 * Enable the "Developer mode" toggle 
 * Click on the "Load unpacked" button
