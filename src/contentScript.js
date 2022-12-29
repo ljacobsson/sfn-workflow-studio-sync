@@ -2,13 +2,15 @@
 const YAML = require('yaml');
 const jp = require('jsonpath');
 const { yamlParse, yamlDump } = require('yaml-cfn');
-
+const cfnSchema = { ...require('../schema/cfn-resource-specification.json').ResourceTypes, ...require('../schema/sam-resource-specification.json').ResourceTypes }
 let aslFileHandle;
 let samFileHandle;
 let originalASLObj;
 let substitutionMap;
 let definitionButton;
 let samTemplate;
+let definitionContentLocked = false;
+let forceSyncButton;
 const definitionButtonSelector = "//span[text()='Definition']";
 
 async function init() {
@@ -18,7 +20,7 @@ async function init() {
   if (!buttonText) return;
   definitionButton = buttonText.parentNode;
   const newButton = definitionButton.cloneNode(true);
-  newButton.childNodes[0].textContent = "Enable local sync";
+  newButton.childNodes[0].textContent = "Link local ASL definition";
   definitionButton.parentNode.append(newButton);
 
   newButton.addEventListener("click", await linkASL(config, newButton));
@@ -34,7 +36,7 @@ window.addEventListener('popstate', (event) => {
 
 async function linkASL(config, newButton) {
   return async () => {
-    const forceSyncButton = definitionButton.cloneNode(true);
+    forceSyncButton = definitionButton.cloneNode(true);
     const linkSAMButton = definitionButton.cloneNode(true);
 
     forceSyncButton.childNodes[0].textContent = "Force sync";
@@ -45,6 +47,7 @@ async function linkASL(config, newButton) {
     });
     linkSAMButton.addEventListener("click", async () => {
       await linkSAM();
+      linkSAMButton.remove();
     });
 
     [aslFileHandle] = await window.showOpenFilePicker({
@@ -57,6 +60,7 @@ async function linkASL(config, newButton) {
         },
       ],
     });
+
     const originalASL = await aslFileHandle.getFile();
     originalASLObj = YAML.parse(await originalASL.text()) || {};
     const graphObserver = new MutationObserver(callback);
@@ -75,7 +79,6 @@ async function linkASL(config, newButton) {
 }
 
 async function linkSAM() {
-  console.log("Linking SAM template");
   [samFileHandle] = await window.showOpenFilePicker({
     types: [
       {
@@ -90,23 +93,82 @@ async function linkSAM() {
   samTemplate = yamlParse(await samFile.text()) || {};
 
   const field = document.evaluate("//span[text()='Enter ']", document, null, XPathResult.ANY_TYPE, null).iterateNext();
-  console.log("field", field);
 
 }
 
+async function dropdownChange(dropdown) {
+  const resourceName = dropdown.value.split("|")[0];
+  const intrinsicFunction = dropdown.value.split("|")[1];
+  let attribute;
+  if (intrinsicFunction !== "Ref") {
+    attribute = dropdown.value.split("|")[2];
+  }
+  const input = dropdown.parentNode.parentNode.parentNode.parentNode.querySelector("input[type=text]");
+  const stateMachine = Object.keys(samTemplate.Resources).filter((resource) => samTemplate.Resources[resource].Type === "AWS::Serverless::StateMachine" && samTemplate.Resources[resource].Properties.DefinitionUri.includes(aslFileHandle.name));
+
+  const stateMachineResource = samTemplate.Resources[stateMachine[0]];
+  stateMachineResource.Properties.DefinitionSubstitutions = stateMachineResource.Properties.DefinitionSubstitutions || {};
+  if (intrinsicFunction === "Ref") {
+    stateMachineResource.Properties.DefinitionSubstitutions[resourceName] = { "Ref": resourceName };
+  } else {
+    stateMachineResource.Properties.DefinitionSubstitutions[resourceName] = { "Fn::GetAtt": [resourceName, attribute] };
+  }
+
+  const writableStream = await samFileHandle.createWritable();
+
+  let yaml = yamlDump(samTemplate);
+  await writableStream.write(yaml);
+  await writableStream.close();
+
+  input.value = '${' + resourceName + '}';
+  var event = new Event('input', { bubbles: true });
+  input.dispatchEvent(event);
+  setTimeout(async () => {
+    forceSyncButton.click();
+    setTimeout(async () => {
+      const asl = await (await aslFileHandle.getFile()).text();
+      for (const sub of Object.keys(stateMachineResource.Properties.DefinitionSubstitutions)) {
+        if (!asl.includes("${" + sub + "}")) {
+          delete stateMachineResource.Properties.DefinitionSubstitutions[sub];
+          const writableStream = await samFileHandle.createWritable();
+          let yaml = yamlDump(samTemplate);
+          await writableStream.write(yaml);
+          await writableStream.close();
+        }
+      }
+
+    }, 300);
+
+  }, 100);
+}
+
 async function renderResources(manualInputField) {
+  if (document.getElementById("substitution-dropdown")) {
+    return;
+  }
   const dropdown = document.createElement("select");
   dropdown.id = "substitution-dropdown";
   dropdown.style = "width: 100%;";
   dropdown.innerHTML = `<option value="">Select a resource</option>`;
+  dropdown.onchange = async () => await dropdownChange(dropdown);
+
   for (const resource of Object.keys(samTemplate.Resources).sort()) {
-    // create a dropdown for each resource
     const resourceObj = samTemplate.Resources[resource];
-    dropdown.innerHTML += `<option value="${resource}">${resource}</option>`;
+    const attributes = cfnSchema[resourceObj.Type].Attributes;
+
+    dropdown.innerHTML += `<optgroup label="${resource} (${resourceObj.Type})"></option>`;
+    dropdown.innerHTML += `<option value="${resource}|Ref">Ref</option>`;
+    for (const attribute of Object.keys(attributes)) {
+      dropdown.innerHTML += `<option value="${resource}|GetAtt|${attribute}">${attribute}</option>`;
+    }
+    dropdown.innerHTML += `</optgroup>`;
   }
-  console.log("dropdown", dropdown);
-  manualInputField.parentNode.parentNode.parentNode.parentNode.parentNode.parentNode.parentNode.parentNode.parentNode.parentNode.parentNode.append(dropdown);
-  
+  if (!definitionContentLocked) {
+    definitionContentLocked = true;
+    if (!document.getElementById("substitution-dropdown")) {
+      manualInputField.parentNode.parentNode.parentNode.parentNode.parentNode.parentNode.parentNode.parentNode.parentNode.parentNode.parentNode.parentNode.append(dropdown);
+    }
+  }
 
 }
 
@@ -174,10 +236,11 @@ const callback = async (mutationList, observer) => {
       document.evaluate("//span[text()='Form']", document, null, XPathResult.ANY_TYPE, null).iterateNext().click();
     }
 
-    console.log(mutation);
     const manualInputField = document.evaluate("//span[text()='Enter ']", document, null, XPathResult.ANY_TYPE, null).iterateNext();
-    if (manualInputField) {
+    if (manualInputField && !definitionContentLocked) {
       renderResources(manualInputField);
+    } else {
+      definitionContentLocked = false;
     }
   }
 };
