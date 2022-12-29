@@ -1,30 +1,53 @@
 'use strict';
 const YAML = require('yaml');
 const jp = require('jsonpath');
+const { yamlParse, yamlDump } = require('yaml-cfn');
 
-let fileHandle, writableStream;
+let aslFileHandle;
+let samFileHandle;
 let originalASLObj;
 let substitutionMap;
 let definitionButton;
+let samTemplate;
+const definitionButtonSelector = "//span[text()='Definition']";
 
-function init() {
+async function init() {
   const config = { attributes: true, childList: true, subtree: true };
-  const buttonText = document.evaluate("//span[text()='Definition']", document, null, XPathResult.ANY_TYPE, null).iterateNext();
+
+  const buttonText = document.evaluate(definitionButtonSelector, document, null, XPathResult.ANY_TYPE, null).iterateNext();
   if (!buttonText) return;
   definitionButton = buttonText.parentNode;
   const newButton = definitionButton.cloneNode(true);
-  const forceSyncButton = definitionButton.cloneNode(true);
-
   newButton.childNodes[0].textContent = "Enable local sync";
-  forceSyncButton.childNodes[0].textContent = "Force sync";
   definitionButton.parentNode.append(newButton);
 
-  forceSyncButton.addEventListener("click", async () => {
-    document.evaluate("//span[text()='Definition']", document, null, XPathResult.ANY_TYPE, null).iterateNext().click();
-  });
+  newButton.addEventListener("click", await linkASL(config, newButton));
 
-  newButton.addEventListener("click", async () => {
-    [fileHandle] = await window.showOpenFilePicker({
+}
+init();
+
+window.addEventListener('popstate', (event) => {
+  window.setTimeout(() => {
+    init();
+  }, 1000);
+});
+
+async function linkASL(config, newButton) {
+  return async () => {
+    const forceSyncButton = definitionButton.cloneNode(true);
+    const linkSAMButton = definitionButton.cloneNode(true);
+
+    forceSyncButton.childNodes[0].textContent = "Force sync";
+    linkSAMButton.childNodes[0].textContent = "Link SAM template";
+
+    forceSyncButton.addEventListener("click", async () => {
+      document.evaluate(definitionButtonSelector, document, null, XPathResult.ANY_TYPE, null).iterateNext().click();
+    });
+    linkSAMButton.addEventListener("click", async () => {
+      await linkSAM();
+    });
+
+    [aslFileHandle] = await window.showOpenFilePicker({
       types: [
         {
           description: 'YAML files',
@@ -32,10 +55,9 @@ function init() {
             'text/yaml': ['.yaml', '.yml'],
           },
         },
-      ],      
+      ],
     });
-    writableStream = await fileHandle.createWritable();
-    const originalASL = await fileHandle.getFile();
+    const originalASL = await aslFileHandle.getFile();
     originalASLObj = YAML.parse(await originalASL.text()) || {};
     const graphObserver = new MutationObserver(callback);
     const rightPanelObserver = new MutationObserver(callback);
@@ -46,16 +68,47 @@ function init() {
     rightPanelObserver.observe(rightPanel, config);
     newButton.remove();
     definitionButton.parentNode.append(forceSyncButton);
+    definitionButton.parentNode.append(linkSAMButton);
     forceSyncButton.click();
-  });
-}
-init();
 
-window.addEventListener('popstate', (event) => {
-  window.setTimeout(() => {
-    init();
-  }, 1000);
-});
+  };
+}
+
+async function linkSAM() {
+  console.log("Linking SAM template");
+  [samFileHandle] = await window.showOpenFilePicker({
+    types: [
+      {
+        description: 'YAML files',
+        accept: {
+          'text/yaml': ['.yaml', '.yml'],
+        },
+      },
+    ],
+  });
+  const samFile = await samFileHandle.getFile();
+  samTemplate = yamlParse(await samFile.text()) || {};
+
+  const field = document.evaluate("//span[text()='Enter ']", document, null, XPathResult.ANY_TYPE, null).iterateNext();
+  console.log("field", field);
+
+}
+
+async function renderResources(manualInputField) {
+  const dropdown = document.createElement("select");
+  dropdown.id = "substitution-dropdown";
+  dropdown.style = "width: 100%;";
+  dropdown.innerHTML = `<option value="">Select a resource</option>`;
+  for (const resource of Object.keys(samTemplate.Resources).sort()) {
+    // create a dropdown for each resource
+    const resourceObj = samTemplate.Resources[resource];
+    dropdown.innerHTML += `<option value="${resource}">${resource}</option>`;
+  }
+  console.log("dropdown", dropdown);
+  manualInputField.parentNode.parentNode.parentNode.parentNode.parentNode.parentNode.parentNode.parentNode.parentNode.parentNode.parentNode.append(dropdown);
+  
+
+}
 
 function getSubstitutionPaths(doc, definition) {
   const paths = [];
@@ -109,7 +162,7 @@ const callback = async (mutationList, observer) => {
         substitutionMap = getSubstitutionPaths(originalASLObj, asl);
       }
 
-      const writableStream = await fileHandle.createWritable();
+      const writableStream = await aslFileHandle.createWritable();
 
       let yamlASL = YAML.stringify(asl);
       for (const sub of substitutionMap) {
@@ -119,6 +172,12 @@ const callback = async (mutationList, observer) => {
 
       await writableStream.close();
       document.evaluate("//span[text()='Form']", document, null, XPathResult.ANY_TYPE, null).iterateNext().click();
+    }
+
+    console.log(mutation);
+    const manualInputField = document.evaluate("//span[text()='Enter ']", document, null, XPathResult.ANY_TYPE, null).iterateNext();
+    if (manualInputField) {
+      renderResources(manualInputField);
     }
   }
 };
