@@ -20,7 +20,8 @@ This extension uses the [File System Access API](https://developer.mozilla.org/e
 3. Select the YAML file you want to sync with. 
 4. Start building!
 
-Note that if you are modifying an existing state machine and use DefinitionSubstitutions, then you'll need to point the sync at the ASL file containing these substitutions in order to preserve them after the sync.
+## Link SAM template
+You can optionally link a SAM template to enable mapping of state machine variables and template resources via [definition substitutions](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-resource-statemachine.html#sam-statemachine-definitionsubstitutions)
 
 --- 
 

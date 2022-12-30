@@ -89,29 +89,37 @@ async function linkSAM() {
       },
     ],
   });
-  const samFile = await samFileHandle.getFile();
-  samTemplate = yamlParse(await samFile.text()) || {};
 
   const field = document.evaluate("//span[text()='Enter ']", document, null, XPathResult.ANY_TYPE, null).iterateNext();
 
 }
 
-async function dropdownChange(dropdown) {
+async function getTemplate() {
+  if (!samFileHandle) return null;
+  const samFile = await samFileHandle.getFile();
+  return yamlParse(await samFile.text()) || {};
+
+}
+
+async function dropdownChange(dropdown, resourceNameOverride) {
+
+  const substitutionName = resourceNameOverride || dropdown.value.split("|")[0];
   const resourceName = dropdown.value.split("|")[0];
   const intrinsicFunction = dropdown.value.split("|")[1];
   let attribute;
   if (intrinsicFunction !== "Ref") {
     attribute = dropdown.value.split("|")[2];
   }
-  const input = dropdown.parentNode.parentNode.parentNode.parentNode.querySelector("input[type=text]");
-  const stateMachine = Object.keys(samTemplate.Resources).filter((resource) => samTemplate.Resources[resource].Type === "AWS::Serverless::StateMachine" && samTemplate.Resources[resource].Properties.DefinitionUri.includes(aslFileHandle.name));
+  const samTemplate = await getTemplate();
 
-  const stateMachineResource = samTemplate.Resources[stateMachine[0]];
+  const stateMachine = getStateMachineFromSAM(samTemplate);
+
+  const stateMachineResource = samTemplate.Resources[stateMachine];
   stateMachineResource.Properties.DefinitionSubstitutions = stateMachineResource.Properties.DefinitionSubstitutions || {};
   if (intrinsicFunction === "Ref") {
-    stateMachineResource.Properties.DefinitionSubstitutions[resourceName] = { "Ref": resourceName };
+    stateMachineResource.Properties.DefinitionSubstitutions[substitutionName] = { "Ref": resourceName };
   } else {
-    stateMachineResource.Properties.DefinitionSubstitutions[resourceName] = { "Fn::GetAtt": [resourceName, attribute] };
+    stateMachineResource.Properties.DefinitionSubstitutions[substitutionName] = { "Fn::GetAtt": [resourceName, attribute] };
   }
 
   const writableStream = await samFileHandle.createWritable();
@@ -120,9 +128,12 @@ async function dropdownChange(dropdown) {
   await writableStream.write(yaml);
   await writableStream.close();
 
-  input.value = '${' + resourceName + '}';
-  var event = new Event('input', { bubbles: true });
-  input.dispatchEvent(event);
+  const input = dropdown.parentNode.parentNode.parentNode.parentNode.querySelector("input[type=text]");
+  if (input) {
+    input.value = '${' + resourceName + '}';
+    var event = new Event('input', { bubbles: true });
+    input.dispatchEvent(event);
+  }
   setTimeout(async () => {
     forceSyncButton.click();
     setTimeout(async () => {
@@ -139,30 +150,19 @@ async function dropdownChange(dropdown) {
 
     }, 300);
 
-  }, 100);
+  }, 300);
+}
+
+function getStateMachineFromSAM(samTemplate) {
+  return Object.keys(samTemplate.Resources).find((resource) => samTemplate.Resources[resource].Type === "AWS::Serverless::StateMachine" && samTemplate.Resources[resource].Properties.DefinitionUri.includes(aslFileHandle.name));
 }
 
 async function renderResources(manualInputField) {
   if (document.getElementById("substitution-dropdown")) {
     return;
   }
-  const dropdown = document.createElement("select");
-  dropdown.id = "substitution-dropdown";
-  dropdown.style = "width: 100%;";
-  dropdown.innerHTML = `<option value="">Select a resource</option>`;
-  dropdown.onchange = async () => await dropdownChange(dropdown);
+  const dropdown = await createSAMDropdown();
 
-  for (const resource of Object.keys(samTemplate.Resources).sort()) {
-    const resourceObj = samTemplate.Resources[resource];
-    const attributes = cfnSchema[resourceObj.Type].Attributes;
-
-    dropdown.innerHTML += `<optgroup label="${resource} (${resourceObj.Type})"></option>`;
-    dropdown.innerHTML += `<option value="${resource}|Ref">Ref</option>`;
-    for (const attribute of Object.keys(attributes)) {
-      dropdown.innerHTML += `<option value="${resource}|GetAtt|${attribute}">${attribute}</option>`;
-    }
-    dropdown.innerHTML += `</optgroup>`;
-  }
   if (!definitionContentLocked) {
     definitionContentLocked = true;
     if (!document.getElementById("substitution-dropdown")) {
@@ -170,6 +170,40 @@ async function renderResources(manualInputField) {
     }
   }
 
+}
+
+async function createSAMDropdown(id) {
+  const samTemplate = await getTemplate();
+  if (!samTemplate) return null;
+  const stateMachine = samTemplate.Resources[getStateMachineFromSAM(samTemplate)];
+  let substitution = null;
+  if (stateMachine.Properties.DefinitionSubstitutions) {
+    substitution = stateMachine.Properties.DefinitionSubstitutions[id];
+  }
+  const dropdown = document.createElement("select");
+  dropdown.id = "substitution-dropdown" + (id || "");
+  dropdown.style = "width: 100%;";
+  dropdown.innerHTML = `<option value="">Select a resource</option>`;
+
+  for (const resource of Object.keys(samTemplate.Resources).sort()) {
+    const resourceObj = samTemplate.Resources[resource];
+    const attributes = cfnSchema[resourceObj.Type].Attributes || {};
+    dropdown.innerHTML += `<optgroup label="${resource} (${resourceObj.Type})"></option>`;
+    dropdown.innerHTML += `<option value="${resource}|Ref">Ref</option>`;
+    for (const attribute of Object.keys(attributes)) {
+      let selected = "";
+      if (substitution && substitution["Fn::GetAtt"] && substitution["Fn::GetAtt"][0] === resource && substitution["Fn::GetAtt"][1] === attribute) {
+        selected = "selected";
+      } else if (substitution && substitution["Ref"] === resource) {
+        selected = "selected";
+      }
+      dropdown.innerHTML += `<option value="${resource}|GetAtt|${attribute}|${id}" ${selected}>${resource}.${attribute}</option>`;
+    }
+    dropdown.innerHTML += `</optgroup>`;
+  }
+  dropdown.onchange = async () => await dropdownChange(dropdown, id);
+
+  return dropdown;
 }
 
 function getSubstitutionPaths(doc, definition) {
@@ -241,6 +275,30 @@ const callback = async (mutationList, observer) => {
       renderResources(manualInputField);
     } else {
       definitionContentLocked = false;
+    }
+
+    if (mutation.target.classList && mutation.target.classList.contains("CodeMirror-code") && !hasSynced && samFileHandle) {
+      hasSynced = true;
+      const codeMirror = document.getElementsByClassName("CodeMirror-code")[0];
+      if (!codeMirror || !codeMirror.innerHTML) continue;
+      let matches = codeMirror.innerHTML.match(/\${(.+?)}/g);
+      if (matches && matches.length) {
+        matches = matches.filter(p => !p.includes(" ")).map(p => p.replace("${", "").replace("}", ""));
+
+        let div = document.createElement("div");
+        div.id = "substitution-map";
+        div.style = "padding-top: 20px;";
+        div.innerHTML += `<h4>Map definition substitutions with SAM template</h4>`;
+        for (const match of matches) {
+          div.innerHTML += `<span>${match}</span>`;
+          const dropdown = await createSAMDropdown(match);
+          div.append(dropdown)
+        }
+        if (document.getElementById("substitution-map")) {
+          document.getElementById("substitution-map").remove();
+        }
+        document.getElementsByClassName("react-codemirror2")[0].parentNode.parentNode.append(div);
+      }
     }
   }
 };
