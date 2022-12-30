@@ -11,7 +11,7 @@
   "devDependencies": {
     "copy-webpack-plugin": "^10.2.4",
     "css-loader": "^6.7.3",
-    "file-loader": "^6.2.0",
+    "file-loader": "^6.2.0",    
     "mini-css-extract-plugin": "^2.7.2",
     "prettier": "^2.8.1",
     "webpack": "^5.75.0",
@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "jsonpath": "^1.1.1",
-    "yaml": "^2.2.0"
+    "yaml": "^2.2.0",
+    "yaml-cfn": "^0.3.2"
   }
 }
