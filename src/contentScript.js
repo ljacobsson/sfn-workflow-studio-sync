@@ -240,14 +240,15 @@ function getSubstitutionPaths(doc, definition) {
   }
   return substitutionMap;
 }
-
+let hasSynced = false;
+let oldHtml = "";
 const callback = async (mutationList, observer) => {
-  let hasSynced = false;
   for (const mutation of mutationList) {
-    if (mutation.target.classList && mutation.target.classList.contains("node-container") || mutation.target.classList.contains("nodes")) {
-      if (!hasSynced) {
+    if (mutation.target.classList && mutation.target.classList.contains("node") && mutation.target.classList.contains("selected")) {
+      const innerHTML = document.getElementsByClassName("nodes")[0].innerHTML;
+      if (oldHtml.length !== innerHTML.length) {
+        oldHtml = innerHTML;
         definitionButton.click();
-        hasSynced = true;
       }
     }
     if (mutation.target.classList && mutation.target.classList.contains("state-definition") && document.getElementsByClassName("json")[0]) {
@@ -278,7 +279,6 @@ const callback = async (mutationList, observer) => {
     }
 
     if (mutation.target.classList && mutation.target.classList.contains("CodeMirror-code") && !hasSynced && samFileHandle) {
-      hasSynced = true;
       const codeMirror = document.getElementsByClassName("CodeMirror-code")[0];
       if (!codeMirror || !codeMirror.innerHTML) continue;
       let matches = codeMirror.innerHTML.match(/\${(.+?)}/g);
