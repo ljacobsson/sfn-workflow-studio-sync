@@ -187,7 +187,7 @@ async function createSAMDropdown(id) {
 
   for (const resource of Object.keys(samTemplate.Resources).sort()) {
     const resourceObj = samTemplate.Resources[resource];
-    const attributes = cfnSchema[resourceObj.Type].Attributes || {};
+    const attributes = (cfnSchema[resourceObj.Type] || {}).Attributes || {};
     dropdown.innerHTML += `<optgroup label="${resource} (${resourceObj.Type})"></option>`;
     dropdown.innerHTML += `<option value="${resource}|Ref">Ref</option>`;
     for (const attribute of Object.keys(attributes)) {
