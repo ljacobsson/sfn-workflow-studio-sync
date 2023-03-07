@@ -17,7 +17,7 @@ This extension uses the [File System Access API](https://developer.mozilla.org/e
 
 1. Open [Workflow Studio](https://eu-west-1.console.aws.amazon.com/states/home?region=eu-west-1#/visual-editor?flowType=create)
 2. Click the `Enable local sync` button at the top right corner
-3. Select the YAML file you want to sync with. 
+3. Select the JSON or YAML file you want to sync with. 
 4. Start building!
 
 ## Link SAM template
