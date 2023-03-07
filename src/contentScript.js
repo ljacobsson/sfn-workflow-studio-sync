@@ -3,6 +3,8 @@ const YAML = require('yaml');
 const jp = require('jsonpath');
 const { yamlParse, yamlDump } = require('yaml-cfn');
 const cfnSchema = { ...require('../schema/cfn-resource-specification.json').ResourceTypes, ...require('../schema/sam-resource-specification.json').ResourceTypes }
+const react = require('react');
+const { format } = require('prettier');
 let aslFileHandle;
 let samFileHandle;
 let originalASLObj;
@@ -11,19 +13,23 @@ let definitionButton;
 let samTemplate;
 let definitionContentLocked = false;
 let forceSyncButton;
+let currentAsl;
 const definitionButtonSelector = "//span[text()='Definition']";
-
+let currentFormat = "YAML";
 async function init() {
+
+  react.useState = (initialState) => { return [initialState, () => { a: 1 }] };
   const config = { attributes: true, childList: true, subtree: true };
 
   const buttonText = document.evaluate(definitionButtonSelector, document, null, XPathResult.ANY_TYPE, null).iterateNext();
   if (!buttonText) return;
   definitionButton = buttonText.parentNode;
-  const newButton = definitionButton.cloneNode(true);
-  newButton.childNodes[0].textContent = "Link local ASL definition";
-  definitionButton.parentNode.append(newButton);
+  const linkAslButton = definitionButton.cloneNode(true);
+  linkAslButton.childNodes[0].textContent = "Link local ASL definition";
+  
+  definitionButton.parentNode.append(linkAslButton);
 
-  newButton.addEventListener("click", await linkASL(config, newButton));
+  linkAslButton.addEventListener("click", await linkASL(config, linkAslButton));
 
 }
 init();
@@ -33,6 +39,24 @@ window.addEventListener('popstate', (event) => {
     init();
   }, 1000);
 });
+
+async function toggleFormat(setToCurrent) {  
+  const formatButton = document.evaluate(`//button[@id='formatButton']`, document, null, XPathResult.ANY_TYPE, null).iterateNext();
+  if (setToCurrent === true) {
+    formatButton.childNodes[0].textContent = `Format: ${currentFormat}`;
+    return;
+  }
+  const format = formatButton.childNodes[0].childNodes[0].textContent;
+  if (format === "Format: YAML") {
+    formatButton.childNodes[0].textContent = "Format: JSON";
+    currentFormat = "JSON";
+  } else {
+    formatButton.childNodes[0].textContent = "Format: YAML";
+    currentFormat = "YAML";
+  }
+  await saveAsl();
+}
+
 
 async function linkASL(config, newButton) {
   return async () => {
@@ -53,15 +77,21 @@ async function linkASL(config, newButton) {
     [aslFileHandle] = await window.showOpenFilePicker({
       types: [
         {
-          description: 'YAML files',
+          description: 'YAML or JSON files',
           accept: {
             'text/yaml': ['.yaml', '.yml'],
+            'text/json': ['.json'],
           },
         },
       ],
     });
+    if (aslFileHandle.name.endsWith(".json")) {
+      currentFormat = "JSON";
+    } else {
+      currentFormat = "YAML";
+    }
 
-    const originalASL = await aslFileHandle.getFile();
+    const originalASL = await aslFileHandle.getFile();    
     originalASLObj = YAML.parse(await originalASL.text()) || {};
     const graphObserver = new MutationObserver(callback);
     const rightPanelObserver = new MutationObserver(callback);
@@ -73,6 +103,17 @@ async function linkASL(config, newButton) {
     newButton.remove();
     definitionButton.parentNode.append(forceSyncButton);
     definitionButton.parentNode.append(linkSAMButton);
+
+    const formatButton = definitionButton.cloneNode(true);
+    formatButton.childNodes[0].textContent = "Format: YAML";
+    formatButton.id = "formatButton";
+    definitionButton.parentNode.append(await formatButton);
+    formatButton.addEventListener("click", toggleFormat);
+
+    setTimeout(async () => {
+      await toggleFormat(true);      
+    }, 500);
+
     forceSyncButton.click();
 
   };
@@ -154,7 +195,7 @@ async function dropdownChange(dropdown, resourceNameOverride) {
 }
 
 function getStateMachineFromSAM(samTemplate) {
-  return Object.keys(samTemplate.Resources).find((resource) => samTemplate.Resources[resource].Type === "AWS::Serverless::StateMachine" && samTemplate.Resources[resource].Properties.DefinitionUri.includes(aslFileHandle.name));
+  return Object.keys(samTemplate.Resources).find((resource) => samTemplate.Resources[resource].Type === "AWS::Serverless::StateMachine" && (samTemplate.Resources[resource].Properties.DefinitionUri || "").includes(aslFileHandle.name));
 }
 
 async function renderResources(manualInputField) {
@@ -254,20 +295,12 @@ const callback = async (mutationList, observer) => {
     if (mutation.target.classList && mutation.target.classList.contains("state-definition") && document.getElementsByClassName("json")[0]) {
 
       const json = document.getElementsByClassName("json")[0].innerText.replace(/\n/g, '').replace(/ /g, '');
-      const asl = JSON.parse(json);
+      currentAsl = JSON.parse(json);
       if (!substitutionMap) {
-        substitutionMap = getSubstitutionPaths(originalASLObj, asl);
+        substitutionMap = getSubstitutionPaths(originalASLObj, currentAsl);
       }
 
-      const writableStream = await aslFileHandle.createWritable();
-
-      let yamlASL = YAML.stringify(asl);
-      for (const sub of substitutionMap) {
-        yamlASL = yamlASL.split(sub.value).join(sub.key);
-      }
-      await writableStream.write(yamlASL);
-
-      await writableStream.close();
+      await saveAsl();
       document.evaluate("//span[text()='Form']", document, null, XPathResult.ANY_TYPE, null).iterateNext().click();
     }
 
@@ -302,4 +335,20 @@ const callback = async (mutationList, observer) => {
     }
   }
 };
+
+async function saveAsl() {
+  const writableStream = await aslFileHandle.createWritable();
+
+  let yamlASL = YAML.stringify(currentAsl);
+  for (const sub of substitutionMap) {
+    yamlASL = yamlASL.split(sub.value).join(sub.key);
+  }
+  if (currentFormat === "YAML") {
+    await writableStream.write(yamlASL);
+  } else {
+    await writableStream.write(JSON.stringify(yamlParse(yamlASL), null, 2));
+  }
+
+  await writableStream.close();
+}
 

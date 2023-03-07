@@ -1,6 +1,6 @@
 {
   "name": "sfn-workflow-studio-sync",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Enables real-time sync between StepFunctions Workflow Studio and your local machine",
   "private": true,
   "scripts": {
