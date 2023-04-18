@@ -22,11 +22,11 @@ async function init() {
   const config = { attributes: true, childList: true, subtree: true };
 
   const buttonText = document.evaluate(definitionButtonSelector, document, null, XPathResult.ANY_TYPE, null).iterateNext();
-  if (!buttonText) return;
+  if (!buttonText || !location.href.includes("visual-editor")) return;
   definitionButton = buttonText.parentNode;
   const linkAslButton = definitionButton.cloneNode(true);
   linkAslButton.childNodes[0].textContent = "Link local ASL definition";
-  
+
   definitionButton.parentNode.append(linkAslButton);
 
   linkAslButton.addEventListener("click", await linkASL(config, linkAslButton));
@@ -40,7 +40,7 @@ window.addEventListener('popstate', (event) => {
   }, 1000);
 });
 
-async function toggleFormat(setToCurrent) {  
+async function toggleFormat(setToCurrent) {
   const formatButton = document.evaluate(`//button[@id='formatButton']`, document, null, XPathResult.ANY_TYPE, null).iterateNext();
   if (setToCurrent === true) {
     formatButton.childNodes[0].textContent = `Format: ${currentFormat}`;
@@ -91,7 +91,7 @@ async function linkASL(config, newButton) {
       currentFormat = "YAML";
     }
 
-    const originalASL = await aslFileHandle.getFile();    
+    const originalASL = await aslFileHandle.getFile();
     originalASLObj = YAML.parse(await originalASL.text()) || {};
     const graphObserver = new MutationObserver(callback);
     const rightPanelObserver = new MutationObserver(callback);
@@ -111,7 +111,7 @@ async function linkASL(config, newButton) {
     formatButton.addEventListener("click", toggleFormat);
 
     setTimeout(async () => {
-      await toggleFormat(true);      
+      await toggleFormat(true);
     }, 500);
 
     forceSyncButton.click();
@@ -181,6 +181,7 @@ async function dropdownChange(dropdown, resourceNameOverride) {
       const asl = await (await aslFileHandle.getFile()).text();
       for (const sub of Object.keys(stateMachineResource.Properties.DefinitionSubstitutions)) {
         if (!asl.includes("${" + sub + "}")) {
+          console.log("deleting " + sub);
           delete stateMachineResource.Properties.DefinitionSubstitutions[sub];
           const writableStream = await samFileHandle.createWritable();
           let yaml = yamlDump(samTemplate);
@@ -261,6 +262,8 @@ function getSubstitutionPaths(doc, definition) {
           paths.push(`$.${currPath}${key}`);
         }
       });
+    } else if (typeof item === "string" && item.startsWith("${")) {
+      paths.push(`$.${currPath}`);
     }
   };
   Object.entries(doc).forEach(([key, value]) => {
