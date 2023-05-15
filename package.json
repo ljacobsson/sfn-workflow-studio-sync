@@ -21,6 +21,7 @@
   "dependencies": {
     "jsonpath": "^1.1.1",
     "yaml": "^2.2.0",
-    "yaml-cfn": "^0.3.2"
+    "yaml-cfn": "^0.3.2",
+    "react": "^18.2.0"
   }
 }
