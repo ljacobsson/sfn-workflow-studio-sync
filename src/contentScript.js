@@ -3,14 +3,11 @@ const YAML = require('yaml');
 const jp = require('jsonpath');
 const { yamlParse, yamlDump } = require('yaml-cfn');
 const cfnSchema = { ...require('../schema/cfn-resource-specification.json').ResourceTypes, ...require('../schema/sam-resource-specification.json').ResourceTypes }
-const react = require('react');
-const { format } = require('prettier');
 let aslFileHandle;
 let samFileHandle;
 let originalASLObj;
 let substitutionMap;
 let definitionButton;
-let samTemplate;
 let definitionContentLocked = false;
 let forceSyncButton;
 let currentAsl;
@@ -18,7 +15,6 @@ const definitionButtonSelector = "//span[text()='Definition']";
 let currentFormat = "YAML";
 async function init() {
 
-  react.useState = (initialState) => { return [initialState, () => { a: 1 }] };
   const config = { attributes: true, childList: true, subtree: true };
 
   const buttonText = document.evaluate(definitionButtonSelector, document, null, XPathResult.ANY_TYPE, null).iterateNext();
