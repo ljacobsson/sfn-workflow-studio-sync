@@ -12,17 +12,24 @@ let definitionContentLocked = false;
 let forceSyncButton;
 let currentAsl;
 const definitionButtonSelector = "//span[text()='Definition']";
+const centerButtonSelector = "//span[text()='Center']";
+const deleteButtonSelector = "//span[text()='Delete']";
+let dummyButton;
 let currentFormat = "YAML";
 async function init() {
 
   const config = { attributes: true, childList: true, subtree: true };
 
-  const buttonText = document.evaluate(definitionButtonSelector, document, null, XPathResult.ANY_TYPE, null).iterateNext();
+  const buttonText = document.evaluate(centerButtonSelector, document, null, XPathResult.ANY_TYPE, null).iterateNext();
   if (!buttonText) return;
   definitionButton = buttonText.parentNode;
-  const linkAslButton = definitionButton.cloneNode(true);
-  linkAslButton.childNodes[0].textContent = "Link local ASL definition";
+  dummyButton = definitionButton.cloneNode(true);
   
+  dummyButton.childNodes[0].remove();
+  
+  const linkAslButton = dummyButton.cloneNode(true);
+  linkAslButton.childNodes[0].textContent = "Link local ASL definition";
+  linkAslButton.childNodes[0].parentNode.disabled = false;
   definitionButton.parentNode.append(linkAslButton);
 
   linkAslButton.addEventListener("click", await linkASL(config, linkAslButton));
@@ -56,8 +63,8 @@ async function toggleFormat(setToCurrent) {
 
 async function linkASL(config, newButton) {
   return async () => {
-    forceSyncButton = definitionButton.cloneNode(true);
-    const linkSAMButton = definitionButton.cloneNode(true);
+    forceSyncButton = dummyButton.cloneNode(true);
+    const linkSAMButton = dummyButton.cloneNode(true);
 
     forceSyncButton.childNodes[0].textContent = "Force sync";
     linkSAMButton.childNodes[0].textContent = "Link SAM template";
@@ -100,7 +107,7 @@ async function linkASL(config, newButton) {
     definitionButton.parentNode.append(forceSyncButton);
     definitionButton.parentNode.append(linkSAMButton);
 
-    const formatButton = definitionButton.cloneNode(true);
+    const formatButton = dummyButton.cloneNode(true);
     formatButton.childNodes[0].textContent = "Format: YAML";
     formatButton.id = "formatButton";
     definitionButton.parentNode.append(await formatButton);
@@ -285,7 +292,7 @@ const callback = async (mutationList, observer) => {
       const innerHTML = document.getElementsByClassName("nodes")[0].innerHTML;
       if (oldHtml.length !== innerHTML.length) {
         oldHtml = innerHTML;
-        definitionButton.click();
+        document.evaluate(definitionButtonSelector, document, null, XPathResult.ANY_TYPE, null).iterateNext().click();
       }
     }
     if (mutation.target.classList && mutation.target.classList.contains("state-definition") && document.getElementsByClassName("json")[0]) {
@@ -296,8 +303,8 @@ const callback = async (mutationList, observer) => {
         substitutionMap = getSubstitutionPaths(originalASLObj, currentAsl);
       }
 
-      await saveAsl();
-      document.evaluate("//span[text()='Form']", document, null, XPathResult.ANY_TYPE, null).iterateNext().click();
+      await saveAsl();      
+      document.evaluate(definitionButtonSelector, document, null, XPathResult.ANY_TYPE, null).iterateNext().click();
     }
 
     const manualInputField = document.evaluate("//span[text()='Enter ']", document, null, XPathResult.ANY_TYPE, null).iterateNext();
