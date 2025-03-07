@@ -1,5 +1,8 @@
 # <img src="public/icons/icon_48.png" width="45" align="left"> StepFunctions Workflow Studio Sync
 
+# DEPRECATED - use [AWS Toolkit for VSCode](https://aws.amazon.com/blogs/compute/introducing-an-enhanced-local-ide-experience-for-aws-step-functions/) instead
+## Keeping the repo visible for nostalgia :-)
+
 Third party Chrome extension that enables real time sync between StepFunctions Workflow Studio and your local file system
 
 ![Demo](images/demo.gif)
